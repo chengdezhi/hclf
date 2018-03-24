@@ -13,17 +13,18 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import precision_recall_fscore_support
 import pickle, json, os
 
-
 os.environ["CUDA_VISIBLE_DEVICES"]="7" 
 mlb = MultiLabelBinarizer()
 
-tree_1 = np.array([3,4,5,6,7,8])
-tree_2 = np.array([10,11,12,13,14,15])
-tree_3 = np.array([17,18,19,20,21,22,23,24])
+tree_1 = np.array([2,3,4,5,6,7,8])
+tree_2 = np.array([9,10,11,12,13,14,15])
+tree_3 = np.array([16,17,18,19,20,21,22,23,24])
+
 layer1 = np.array([2, 9, 16])
 layer2 = np.array([3, 4, 10, 11, 17, 21])
 layer3 = np.array([5, 6, 7, 8, 12, 13, 14, 15, 18, 19, 20, 22, 23, 24])
 mlb.fit([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]])
+
 # Parameters
 learning_rate = 1e-3
 training_iters = 2000
@@ -31,7 +32,7 @@ train_epoch = 100
 display_step = 30
 embedding_size = 300
 beam_width = 5
-multilabel_threshold = -1.5 
+multilabel_threshold = -3.0 
 print("multilabel_threshold:", multilabel_threshold)
 EOS = 25
 PAD = 0
@@ -45,15 +46,11 @@ n_classes = 26  # 23+3
 # word_embedding/label_embedding 
 word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
 vocab_size = len(word2idx)
-
 word2vec = get_word2vec(word2idx)
 idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
-assert 0 in idx2vec
-assert 1 in idx2vec
-emb_mat = np.array([idx2vec[idx] if idx in idx2vec
-                        else np.random.multivariate_normal(np.zeros(embedding_size), np.eye(embedding_size))
-                        for idx in range(vocab_size)])
-
+unk_embedding = np.random.multivariate_normal(np.zeros(embedding_size), np.eye(embedding_size))
+emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
+print("emb_mat:", emb_mat.shape)
 
 word_embeddings = tf.constant(emb_mat, dtype=tf.float32)
 label_embeddings = tf.get_variable(name="embeddings", shape=[n_classes, embedding_size], dtype=tf.float32)
@@ -136,7 +133,6 @@ attention_mechanism = BahdanauAttention(hidden_size, memory=tiled_inputs, memory
 tiled_xx_final = tile_batch(xx_final, beam_width)
 encoder_state2 = rnn.LSTMStateTuple(tiled_xx_final, tiled_xx_final)
 
-
 # lstm = rnn.LayerNormBasicLSTMCell(hidden_sizei, dropout_keep_prob=keep_prob)
 cell = AttentionWrapper(lstm, attention_mechanism, output_attention=False)
 cell_state = cell.zero_state(dtype=tf.float32, batch_size=test_batch_size * beam_width)
@@ -144,7 +140,6 @@ cell_state = cell_state.clone(cell_state=encoder_state2, attention=tiled_first_a
 infer_decoder = BeamSearchDecoder(cell, embedding=label_embeddings, start_tokens=[GO] * test_batch_size, end_token=EOS,
                                   initial_state=cell_state, beam_width=beam_width, output_layer=output_l)
 decoder_outputs_infer, decoder_state_infer, decoder_seq_infer = dynamic_decode(infer_decoder, maximum_iterations=4)
-
 
 # cost/evaluate/train
 weights = tf.sequence_mask(y_seq_length, max_seq_length, dtype=tf.float32)
@@ -156,8 +151,7 @@ scores = decoder_state_infer.log_probs
 
 saver = tf.train.Saver(max_to_keep=20)
 save_step = 100 
-sava_path = "data/mlb_hclf"
-
+save_path = "data/mlb_hclf"
 
 init = tf.global_variables_initializer()
 
@@ -171,6 +165,7 @@ with tf.Session() as sess:
                                        y_seq_length: y_len})
         if step % save_step == 0:
             saver.save(sess, save_path, global_step=step)
+            print("sava model at ", save_path, step)
         if step % display_step == 0:
             loss = sess.run(cost, feed_dict={x: x_input, x_mask:x_mask_input, y: y_seqs, y_decoder: y_decode,  x_seq_length:x_len,  keep_prob: 0.5,
                                        y_seq_length: y_len})
@@ -191,7 +186,7 @@ with tf.Session() as sess:
                 # print("checked", t_x_input_b.shape, type(t_x_len_b), t_x_mask_input_b.shape, t_x_len_b.shape)
                 t_preds, t_scores = sess.run([pred, scores], feed_dict={x: t_x_input_b, x_mask:t_x_mask_input_b, x_seq_length:t_x_len_b, keep_prob: 1.0})
                 print("t_scores:", t_scores[0,:])
-                t_preds_trans = prediction_with_threshold(t_preds, t_scores, threshold=-1.3)
+                t_preds_trans = prediction_with_threshold(t_preds, t_scores, threshold=multilabel_threshold)
                 # print("t_preds_trans:", t_preds_trans)
                 t_preds_b = mlb.transform(t_preds_trans)
                 # print(type(t_preds_b),  t_preds_b.shape)
