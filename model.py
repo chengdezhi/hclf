@@ -26,7 +26,9 @@ class Model(object):
     self.y_seq_length = tf.placeholder(tf.int32, [None], name="y_seq_length")
     self.keep_prob = tf.placeholder(tf.float32, name="keep_prob")
     self.output_l = layers_core.Dense(config.n_classes, use_bias=True)
-    self.lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob)  # lstm for decode 
+    if config.model_name == "hclf_bilstm": config.decode_size = 2*config.hidden_size
+    else: config.decode_size = config.hidden_size  
+    self.lstm = rnn.LayerNormBasicLSTMCell(config.decode_size, dropout_keep_prob=config.keep_prob)  # lstm for decode 
     # TODO config.emb_mat 
     self.word_embeddings = tf.constant(config.emb_mat, dtype=tf.float32, name="word_embeddings")
     self.label_embeddings = tf.get_variable(name="label_embeddings", shape=[config.n_classes, config.label_embedding_size], dtype=tf.float32)
@@ -41,18 +43,33 @@ class Model(object):
     self.summary = tf.summary.merge(tf.get_collection("summaries", scope=self.scope))
   
   def _build_encode(self, config):
-    lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode 
-    outputs, output_states = tf.nn.dynamic_rnn(lstm, self.xx, dtype='float', sequence_length=self.x_seq_length)   
-    self.xx_context = outputs  # tf.concat(outputs, 2)   # [None, DL, 2*hd]
-    self.xx_final = output_states[0]  # tf.concat(output_states, 1)  # [None, 2*hd]
-    # TODO x_mask 
-    x_mask = tf.cast(self.x_mask, "float")
-    self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
+    if config.model_name == "hclf_baseline":
+      lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode 
+      outputs, output_states = tf.nn.dynamic_rnn(lstm, self.xx, dtype='float', sequence_length=self.x_seq_length)  
+      self.check = outputs  
+      self.xx_context = outputs  # tf.concat(outputs, 2)   # [None, DL, 2*hd]
+      self.xx_final = output_states[1]  # lstm cell output_states: [c,h]
+      # TODO x_mask 
+      x_mask = tf.cast(self.x_mask, "float")
+      self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
+
+    if config.model_name == "hclf_bilstm":
+      lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode
+      outputs, output_states = tf.nn.bidirectional_dynamic_rnn(lstm, lstm, self.xx, dtype="float", sequence_length=self.x_seq_length)
+      self.check = output_states
+      self.xx_context = tf.concat(outputs, 2)   # [None, DL, 2*hd]
+      self.xx_final = tf.concat([output_states[0][1], output_states[1][1]], 1)  # [None, 2*hd]
+      # TODO x_mask 
+      x_mask = tf.cast(self.x_mask, "float")
+      self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
+      
+    if config.model_name == "RCNN":
+      pass 
 
   def _build_train(self, config):
-    # decode 
+    # decode
     encoder_state = rnn.LSTMStateTuple(self.xx_final, self.xx_final)
-    attention_mechanism = BahdanauAttention(config.hidden_size, memory=self.xx_context, memory_sequence_length=self.x_seq_length)
+    attention_mechanism = BahdanauAttention(config.decode_size, memory=self.xx_context, memory_sequence_length=self.x_seq_length)
     cell = AttentionWrapper(self.lstm, attention_mechanism, output_attention=False)
     cell_state = cell.zero_state(dtype=tf.float32, batch_size=config.batch_size)
     cell_state = cell_state.clone(cell_state=encoder_state, attention=self.first_attention)
@@ -62,10 +79,12 @@ class Model(object):
 
   def _build_infer(self, config):
     # infer_decoder/beam_search  
+    if config.model_name == "hclf_bilstm": decode_size = 2*config.hidden_size
+    else: decode_size = config.hidden_size  
     tiled_inputs = tile_batch(self.xx_context, multiplier=config.beam_width)
     tiled_sequence_length = tile_batch(self.x_seq_length, multiplier=config.beam_width)
     tiled_first_attention = tile_batch(self.first_attention, multiplier=config.beam_width)
-    attention_mechanism = BahdanauAttention(config.hidden_size, memory=tiled_inputs, memory_sequence_length=tiled_sequence_length)
+    attention_mechanism = BahdanauAttention(config.decode_size, memory=tiled_inputs, memory_sequence_length=tiled_sequence_length)
     tiled_xx_final = tile_batch(self.xx_final, config.beam_width)
     encoder_state2 = rnn.LSTMStateTuple(tiled_xx_final, tiled_xx_final)
     cell = AttentionWrapper(self.lstm, attention_mechanism, output_attention=False)

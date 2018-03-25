@@ -34,7 +34,7 @@ flags.DEFINE_integer("GO", 1, "")
 
 # graph control
 flags.DEFINE_string("mode", "train", "")
-flags.DEFINE_string("model_name", "hclf-att", "")
+flags.DEFINE_string("model_name", "hclf_baseline", "")   # RCNN 
 flags.DEFINE_integer("max_to_keep", 30, "")
 
 flags.DEFINE_boolean("load", False, "load saved data? [True]")
@@ -62,6 +62,7 @@ def main(_):
     config.eval_period = 1
     config.batch_size = 3
     config.val_num_batches = 6
+    config.out_dir = "check"
   print(config.test_batch_size)
   config.tree1 = np.array([2,3,4,5,6,7,8])
   config.tree2 = np.array([9,10,11,12,13,14,15])
