@@ -101,7 +101,29 @@ def _check(config):
     print("check:", check[0][1].shape, check[1][1].shape, type(check), xx_final.shape, xx_context.shape)
 
 def _test(config):
-  pass
+
+  word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
+  vocab_size = len(word2idx)
+  word2vec = {} # or get_word2vec(word2idx)
+  idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
+  unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
+  config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
+
+  dev_data = read_data(data_type="test", word2idx=word2idx, test_true_label=True)
+  # if config.use_glove_for_unk:
+  pprint(config.__flags, indent=2)
+  model = get_model(config)
+  graph_handler = GraphHandler(config, model)
+  sess = tf.Session(config=tf.ConfigProto(allow_soft_placement=True))
+  graph_handler.initialize(sess)
+  
+  dev_evaluate = Evaluator(config, model) 
+  num_steps = math.ceil(dev_data.num_examples / config.test_batch_size)
+  if 0 < config.val_num_batches < num_steps:
+    num_steps = config.val_num_batches
+  # print("num_steps:", num_steps)
+  e_dev = dev_evaluate.get_evaluation_from_batches(
+    sess, tqdm(dev_data.get_batches(config.test_batch_size, num_batches=num_steps), total=num_steps))
 
 def _forward(config):
   pass

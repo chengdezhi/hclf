@@ -29,20 +29,16 @@ class GraphHandler(object):
   def _load(self, sess):
     config = self.config
     vars_ = {var.name.split(":")[0]: var for var in tf.all_variables()}
-
-    def _filter(name):
-      tokens = name.split("/")
-      return len(tokens)==1 or not ('output' in tokens)
-
-    if self.config.load_trained_model:
-        vars_ = {k: v for (k, v) in vars_.items() if _filter(k)}
+    #for var in tf.all_variables():
+    #  print("var:", var.name)
+    #  break
     if config.load_ema:
       ema = self.model.var_ema
       for var in tf.trainable_variables():
-          name = var.name.split(":")[0]
-          if name in vars_:
-              del vars_[name]
-              vars_[ema.average_name(var)] = var
+        name = var.name.split(":")[0]
+        if name in vars_:
+          del vars_[name]
+          vars_[ema.average_name(var)] = var
 
     saver = tf.train.Saver(vars_, max_to_keep=config.max_to_keep)
 

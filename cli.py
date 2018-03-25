@@ -35,9 +35,12 @@ flags.DEFINE_integer("GO", 1, "")
 # graph control
 flags.DEFINE_string("mode", "train", "")
 flags.DEFINE_string("model_name", "hclf_baseline", "")   # RCNN 
+flags.DEFINE_string("load_path", "", "")   # RCNN 
 flags.DEFINE_integer("max_to_keep", 30, "")
 
 flags.DEFINE_boolean("load", False, "load saved data? [True]")
+flags.DEFINE_boolean("load_ema", False, "load saved data? [True]")
+flags.DEFINE_integer("load_step", 0, "")  
 flags.DEFINE_boolean("eval", True, "eval data? [True]")
 flags.DEFINE_boolean("eval_trees", True, "eval trees? [True]")
 flags.DEFINE_boolean("eval_layers", True, "eval layers? [True]")
@@ -62,7 +65,7 @@ def main(_):
     config.eval_period = 1
     config.batch_size = 3
     config.val_num_batches = 6
-    config.out_dir = "check"
+    config.out_dir = "bilstm-out"
   print(config.test_batch_size)
   config.tree1 = np.array([2,3,4,5,6,7,8])
   config.tree2 = np.array([9,10,11,12,13,14,15])
