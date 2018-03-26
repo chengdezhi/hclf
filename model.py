@@ -17,8 +17,8 @@ class Model(object):
     max_seq_length = config.max_seq_length 
     self.global_step = tf.get_variable('global_step', shape=[], dtype='int32',
                    initializer=tf.constant_initializer(0), trainable=False)
-    self.x = tf.placeholder(tf.int32, [None, None], name="x")      # [batch_size, max_doc_len]
-    self.x_mask = tf.placeholder(tf.int32, [None, None], name="x_mask")      # [batch_size, max_doc_len]
+    self.x = tf.placeholder(tf.int32, [None, config.max_docs_length], name="x")      # [batch_size, max_doc_len]
+    self.x_mask = tf.placeholder(tf.int32, [None, config.max_docs_length], name="x_mask")      # [batch_size, max_doc_len]
     self.y = tf.placeholder(tf.int32, [None, max_seq_length], name="y")
     self.y_mask = tf.placeholder(tf.int32, [None, max_seq_length], name="y_mask")
     self.y_decoder = tf.placeholder(tf.int32, [None, max_seq_length], name="y-decoder")
@@ -26,9 +26,10 @@ class Model(object):
     self.y_seq_length = tf.placeholder(tf.int32, [None], name="y_seq_length")
     self.keep_prob = tf.placeholder(tf.float32, name="keep_prob")
     self.output_l = layers_core.Dense(config.n_classes, use_bias=True)
-    if config.model_name == "hclf_bilstm": config.decode_size = 2*config.hidden_size
-    else: config.decode_size = config.hidden_size  
+    if config.model_name == "hclf_baseline": config.decode_size = config.hidden_size
+    else: config.decode_size = 2*config.hidden_size  
     self.lstm = rnn.LayerNormBasicLSTMCell(config.decode_size, dropout_keep_prob=config.keep_prob)  # lstm for decode 
+    self.encode_lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode 
     # TODO config.emb_mat 
     self.word_embeddings = tf.constant(config.emb_mat, dtype=tf.float32, name="word_embeddings")
     self.label_embeddings = tf.get_variable(name="label_embeddings", shape=[config.n_classes, config.label_embedding_size], dtype=tf.float32)
@@ -44,8 +45,7 @@ class Model(object):
   
   def _build_encode(self, config):
     if config.model_name == "hclf_baseline":
-      lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode 
-      outputs, output_states = tf.nn.dynamic_rnn(lstm, self.xx, dtype='float', sequence_length=self.x_seq_length)  
+      outputs, output_states = tf.nn.dynamic_rnn(self.encode_lstm, self.xx, dtype='float', sequence_length=self.x_seq_length)  
       self.check = outputs  
       self.xx_context = outputs  # tf.concat(outputs, 2)   # [None, DL, 2*hd]
       self.xx_final = output_states[1]  # lstm cell output_states: [c,h]
@@ -54,17 +54,23 @@ class Model(object):
       self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
 
     if config.model_name == "hclf_bilstm":
-      lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode
-      outputs, output_states = tf.nn.bidirectional_dynamic_rnn(lstm, lstm, self.xx, dtype="float", sequence_length=self.x_seq_length)
-      self.check = output_states
+      outputs, output_states = tf.nn.bidirectional_dynamic_rnn(self.encode_lstm, self.encode_lstm, self.xx, dtype="float", sequence_length=self.x_seq_length)
+      # self.check = output_states
       self.xx_context = tf.concat(outputs, 2)   # [None, DL, 2*hd]
       self.xx_final = tf.concat([output_states[0][1], output_states[1][1]], 1)  # [None, 2*hd]
       # TODO x_mask 
       x_mask = tf.cast(self.x_mask, "float")
       self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
+      self.check = self.first_attention
       
     if config.model_name == "RCNN":
-      pass 
+      outputs, output_states = tf.nn.bidirectional_dynamic_rnn(self.encode_lstm, self.encode_lstm, self.xx, dtype="float", sequence_length=self.x_seq_length)
+      self.xx_context = tf.concat(outputs, 2)   # [None, DL, 2*hd]
+      #self.xx_final = tf.concat([output_states[0][1], output_states[1][1]], 1)  # [None, 2*hd]
+      self.xx_final = tf.layers.max_pooling1d(self.xx_context, config.max_docs_length, 1)
+      self.xx_final = tf.squeeze(self.xx_final)
+      self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
+      self.check = self.xx_final
 
   def _build_train(self, config):
     # decode

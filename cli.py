@@ -50,6 +50,8 @@ flags.DEFINE_boolean("debug", False, "debug")
 # define hierarchical 
 flags.DEFINE_integer("max_seq_length", 4, "")
 flags.DEFINE_integer("n_classes", 26, "")
+flags.DEFINE_integer("max_docs_length", 0, "")
+
 
 # dir
 flags.DEFINE_string("out_dir", "out", "")
@@ -59,13 +61,14 @@ flags.DEFINE_string("out_dir", "out", "")
 def main(_):
   config = flags.FLAGS
   if config.debug:
+    config.mode = "check"
     config.num_batches = 2
     config.log_period = 1
     config.save_period = 1
     config.eval_period = 1
     config.batch_size = 3
     config.val_num_batches = 6
-    config.out_dir = "bilstm-out"
+    config.out_dir = "debug"
   print(config.test_batch_size)
   config.tree1 = np.array([2,3,4,5,6,7,8])
   config.tree2 = np.array([9,10,11,12,13,14,15])

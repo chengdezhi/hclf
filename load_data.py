@@ -74,7 +74,7 @@ class DataSet(object):
       print("batch_idxs:", len(batch_idxs))
       yield batch_idxs, batch_ds
 
-def read_data(data_type="train", word2idx=None, max_seq_length=4, test_true_label=True):
+def read_data(config, data_type="train", word2idx=None, max_seq_length=4, test_true_label=True):
   print("preparing {} data".format(data_type), "test_true_label:", test_true_label) 
   docs, label_seqs, decode_inps, seq_lens = load_hclf_data(data_type=data_type, test_true_label=test_true_label)
   docs = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
@@ -92,10 +92,11 @@ def read_data(data_type="train", word2idx=None, max_seq_length=4, test_true_labe
   
   for doc in docs:
     # print(len(doc))
-    max_docs_length = len(doc) if len(doc) > max_docs_length else max_docs_length
-  print("max_doc_length:", data_type, max_docs_length)
-  docs2mat = [[word2idx[doc[_]] if _ < len(doc) else 1 for _ in range(max_docs_length)] for doc in docs] 
-  docs2mask = [[1 if _ < len(doc) else 0 for _ in range(max_docs_length)] for doc in docs] 
+    config.max_docs_length = len(doc) if len(doc) > config.max_docs_length else config.max_docs_length
+  
+  print("max_doc_length:", data_type, config.max_docs_length)
+  docs2mat = [[word2idx[doc[_]] if _ < len(doc) else 1 for _ in range(config.max_docs_length)] for doc in docs] 
+  docs2mask = [[1 if _ < len(doc) else 0 for _ in range(config.max_docs_length)] for doc in docs] 
   
   label_seqs_f, decode_inps_f, seq_lens_f = [], [], []  # for filter 
   for label_seq, decode_inp, seq_len, flag in zip(label_seqs, decode_inps, seq_lens, filter_ids):
