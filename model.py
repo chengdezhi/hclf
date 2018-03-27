@@ -69,6 +69,8 @@ class Model(object):
       #self.xx_final = tf.concat([output_states[0][1], output_states[1][1]], 1)  # [None, 2*hd]
       self.xx_final = tf.layers.max_pooling1d(self.xx_context, config.max_docs_length, 1)
       self.xx_final = tf.squeeze(self.xx_final)
+      self.xx_final = tf.reshape(self.xx_final, [-1, 2*config.hidden_size])
+      print("check:", self.xx_final.get_shape())
       self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
       self.check = self.xx_final
 

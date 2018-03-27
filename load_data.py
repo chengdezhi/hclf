@@ -9,7 +9,6 @@ from itertools import zip_longest
 from collections import Counter, defaultdict
 from sklearn.preprocessing import MultiLabelBinarizer
 from tqdm import tqdm
-import cli
 
 def grouper(iterable, n, fillvalue=None, shorten=False, num_groups=None):
   args = [iter(iterable)] * n
@@ -499,6 +498,7 @@ def prediction_with_threshold(t_preds, t_scores, threshold):
   return new_preds
 
 def test():
+  import cli
   config = cli.config
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
   train_data = read_data(config, "train", word2idx)

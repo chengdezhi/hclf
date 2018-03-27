@@ -32,8 +32,8 @@ def _train(config):
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
   print("emb_mat:", config.emb_mat.shape)
 
-  train_data = read_data(config, data_type="train", word2idx=word2idx, test_true_label=True)
-  dev_data = read_data(config, data_type="test", word2idx=word2idx, test_true_label=True)
+  train_data = read_data(config, data_type="train", word2idx=word2idx)
+  dev_data = read_data(config, data_type="test", word2idx=word2idx)
   
   pprint(config.__flags, indent=2)
   model = get_model(config)
@@ -79,8 +79,8 @@ def _check(config):
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
   print("emb_mat:", config.emb_mat.shape)
 
-  train_data = read_data(config, data_type="train", word2idx=word2idx, test_true_label=True)
-  dev_data = read_data(config, data_type="test", word2idx=word2idx, test_true_label=True)
+  train_data = read_data(config, data_type="train", word2idx=word2idx)
+  dev_data = read_data(config, data_type="test", word2idx=word2idx)
   
   pprint(config.__flags, indent=2)
   model = get_model(config)
@@ -109,7 +109,7 @@ def _test(config):
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
 
-  dev_data = read_data(config, data_type="test", word2idx=word2idx, test_true_label=True)
+  dev_data = read_data(config, data_type="test", word2idx=word2idx)
   # if config.use_glove_for_unk:
   pprint(config.__flags, indent=2)
   model = get_model(config)
