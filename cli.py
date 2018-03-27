@@ -58,8 +58,9 @@ flags.DEFINE_string("out_dir", "out", "")
 # flags.DEFINE_string("save_dir", "out/save", "")
 # flags.DEFINE_string("log_dir", "out/log", "")
 
+config = flags.FLAGS
+
 def main(_):
-  config = flags.FLAGS
   if config.debug:
     config.mode = "check"
     config.num_batches = 2

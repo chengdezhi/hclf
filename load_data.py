@@ -9,6 +9,7 @@ from itertools import zip_longest
 from collections import Counter, defaultdict
 from sklearn.preprocessing import MultiLabelBinarizer
 from tqdm import tqdm
+import cli
 
 def grouper(iterable, n, fillvalue=None, shorten=False, num_groups=None):
   args = [iter(iterable)] * n
@@ -74,9 +75,9 @@ class DataSet(object):
       print("batch_idxs:", len(batch_idxs))
       yield batch_idxs, batch_ds
 
-def read_data(config, data_type="train", word2idx=None, max_seq_length=4, test_true_label=True):
-  print("preparing {} data".format(data_type), "test_true_label:", test_true_label) 
-  docs, label_seqs, decode_inps, seq_lens = load_hclf_data(data_type=data_type, test_true_label=test_true_label)
+def read_data(config, data_type="train", word2idx=None, max_seq_length=4):
+  print("preparing {} data".format(data_type)) 
+  docs, label_seqs, decode_inps, seq_lens = load_hclf_reuters(data_type=data_type)
   docs = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
   docs_filter = [] 
   filter_ids = []
@@ -211,8 +212,167 @@ def prepare_data(data_type="train", word2idx=None, max_seq_length=4, test_true_l
   print(data_type, len(seq_lens))
   return np.array(docs2mat), np.array(docs2mask), np.array(docs_len), np.array(label_seqs), np.array(decode_inps), np.array(seq_lens), np.array(y_seq_mask), len(seq_lens)
      
+def load_hclf_reuters(data_type="train", allow_internal=True, in_hierarchy=True):
+  layer_1 = ["hier1",  "hier2", "hier3"]
+  layer_2 = ["grain", "crude", "livestock", "veg-oil", "meal-feed", "strategic-metal"]
+  layer_3 = ["corn",  "wheat", "ship", "nat-gas", "carcass", "hog", "oilseed", "palm-oil", "barley", "rice", "cocoa", "copper", "tin", "iron-steel"]
 
-def load_hclf_data(data_type="train", allow_internal=True, test_true_label=False):
+  label2id = {
+              "grain":3, "crude":4, "livestock":10, "veg-oil":11, "meal-feed":17, "strategic-metal":21, 
+              "corn":5,  "wheat":6, "ship":7, "nat-gas":8, 
+              "carcass":12, "hog":13, "oilseed":14, "palm-oil":15, 
+              "barley":18, "rice":19, "cocoa":20, "copper":22, 
+              "tin":23, "iron-steel":24
+             }
+  
+  tree_labels = set(layer_2 + layer_3)
+  sl_labels   = set(layer_2)
+  leaf_labels = set(layer_3)
+
+  # 23
+  seqs    = [
+             [2,3], [2,4], [9,10], [9,11], [16,17], [16,21],
+             [2,3,5], [2,3,6], [2,4,7], [2,4,8], [9,10,12], [9,10,13], [9,11,14], 
+             [9,11,15], [16,17,18], [16,17,19], [16,17,20], [16,21,22], [16,21,23], [16,21,24]
+            ]
+
+  targets = [
+             [2,3,25,0], [2,4,25,0], [9,10,25,0], [9,11,25,0], [16,17,25,0], [16,21,25,0],
+             [2,3,5,25], [2,3,6,25], [2,4,7,25], [2,4,8,25], [9,10,12,25], [9,10,13,25], [9,11,14,25], 
+             [9,11,15,25], [16,17,18,25], [16,17,19,25], [16,17,20,25], [16,21,22,25], [16,21,23,25], [16,21,24,25]
+            ]
+
+  d_inputs = [
+             [2,3,0], [2,4,0], [9,10,0], [9,11,0], [16,17,0], [16,21,0],
+             [2,3,5], [2,3,6], [2,4,7], [2,4,8], [9,10,12], [9,10,13], [9,11,14], 
+             [9,11,15], [16,17,18], [16,17,19], [16,17,20], [16,21,22], [16,21,23], [16,21,24]
+            ]
+
+  tree_1 = set([3,4,5,6,7,8])
+  tree_2 = set([10,11,12,13,14,15])
+  tree_3 = set([17,18,19,20,21,22,23,24])
+   
+  
+  docs = []
+  label_seqs = []
+  decode_inp = []
+  seq_len = []
+
+  def _process(doc_id, seq, target, d_input):
+      docs.append(doc_id)
+      label_seqs.append(target)
+      decode_inp.append([1] +d_input)
+      seq_len.append(len(seq)+1)
+
+
+  mlb = MultiLabelBinarizer()
+  documents = reuters.fileids()
+  documents = list(filter(lambda doc: doc.startswith(data_type),  documents))
+
+  cnt = 0
+  check_cnt = 0
+  positive_cnt = 0
+   
+  for doc_id in documents:
+      doc_labels = set([label2id[_] for _ in reuters.categories(doc_id) if _ in label2id])
+      # print(doc_labels)
+      doc_hcls = []
+      hit = False 
+      for seq, target, d_input in list(zip(seqs[::-1], targets[::-1], d_inputs[::-1])):
+          keep = len(set(seq[1:]) - doc_labels) == 0
+          # if positive_cnt < 10 : print(keep)
+          if keep:   # hit 
+            hit = True
+            repeat = False
+            for doc_hcl in doc_hcls: 
+                if len(set(seq)-set(doc_hcl))==0: repeat=True
+            if not repeat: 
+                doc_hcls.append(seq)
+                if data_type=="train": _process(doc_id, seq, target, d_input)
+      if hit : positive_cnt += 1
+            
+      if data_type == "test" and hit:
+          tl = set()
+          for doc_hcl in doc_hcls: tl = tl | set(doc_hcl)
+          tl = list(tl)
+          label_seqs.append(tl)
+          docs.append(doc_id)
+          decode_inp.append([1,0,0,0])   # 1 start 
+          seq_len.append(1)
+  print(data_type, len(documents), len(docs), positive_cnt)
+  if data_type=="test":  label_seqs = mlb.fit_transform(label_seqs)
+  return docs, label_seqs, decode_inp, seq_len                 
+
+def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
+  layer_1 = ["hier1",  "hier2", "hier3"]
+  layer_2 = ["grain", "crude", "livestock", "veg-oil", "meal-feed", "strategic-metal"]
+  layer_3 = ["corn",  "wheat", "ship", "nat-gas", "carcass", "hog", "oilseed", "palm-oil", "barley", "rice", "cocoa", "copper", "tin", "iron-steel"]
+
+  label2id = {
+              "grain":3, "crude":4, "livestock":10, "veg-oil":11, "meal-feed":17, "strategic-metal":21, 
+              "corn":5,  "wheat":6, "ship":7, "nat-gas":8, 
+              "carcass":12, "hog":13, "oilseed":14, "palm-oil":15, 
+              "barley":18, "rice":19, "cocoa":20, "copper":22, 
+              "tin":23, "iron-steel":24
+             }
+  
+  # 23
+  seqs    = [
+             [2,3], [2,4], [9,10], [9,11], [16,17], [16,21],
+             [2,3,5], [2,3,6], [2,4,7], [2,4,8], [9,10,12], [9,10,13], [9,11,14], 
+             [9,11,15], [16,17,18], [16,17,19], [16,17,20], [16,21,22], [16,21,23], [16,21,24]
+            ]
+
+  targets = [
+             [2,3,25,0], [2,4,25,0], [9,10,25,0], [9,11,25,0], [16,17,25,0], [16,21,25,0],
+             [2,3,5,25], [2,3,6,25], [2,4,7,25], [2,4,8,25], [9,10,12,25], [9,10,13,25], [9,11,14,25], 
+             [9,11,15,25], [16,17,18,25], [16,17,19,25], [16,17,20,25], [16,21,22,25], [16,21,23,25], [16,21,24,25]
+            ]
+
+  d_inputs = [
+             [2,3,0], [2,4,0], [9,10,0], [9,11,0], [16,17,0], [16,21,0],
+             [2,3,5], [2,3,6], [2,4,7], [2,4,8], [9,10,12], [9,10,13], [9,11,14], 
+             [9,11,15], [16,17,18], [16,17,19], [16,17,20], [16,21,22], [16,21,23], [16,21,24]
+            ]
+
+  mlb = MultiLabelBinarizer()
+  documents = reuters.fileids()
+  documents = list(filter(lambda doc: doc.startswith(data_type),  documents))
+  cnt = 0
+  check_cnt = 0
+  positive_cnt = 0
+   
+  label2cnt = defaultdict(int)
+  for doc_id in documents:
+      doc_labels = set([label2id[_] for _ in reuters.categories(doc_id) if _ in label2id])
+      # print(doc_labels)
+      doc_hcls = []
+      hit = False 
+      for seq, target, d_input in list(zip(seqs[::-1], targets[::-1], d_inputs[::-1])):
+          keep = len(set(seq[1:]) - doc_labels) == 0
+          # if positive_cnt < 10 : print(keep)
+          if keep:   # hit 
+            hit = True
+            repeat = False
+            for doc_hcl in doc_hcls: 
+                if len(set(seq)-set(doc_hcl))==0: repeat=True
+            if not repeat: 
+                doc_hcls.append(seq)
+      if hit : positive_cnt += 1
+            
+      if hit:
+          tl = set()
+          for doc_hcl in doc_hcls: tl = tl | set(doc_hcl)
+          tl = list(tl)
+          for l_id in tl: label2cnt[l_id] += 1
+          text = " ".join(tokenize(reuters.raw(doc_id))) 
+          line = text 
+          for l_id in tl:  line += "\t" + "__label__" + str(l_id)
+          f.write(line+"\n")
+  print(data_type)
+  for i in range(25): print(i, label2cnt[i])
+
+def load_hclf_data(data_type="train", allow_internal=True, test_true_label=False, in_hierarchy=True):
   layer_1 = ["hier1",  "hier2", "hier3"]
   layer_2 = ["grain", "crude", "livestock", "veg-oil", "meal-feed", "strategic-metal"]
   layer_3 = ["corn",  "wheat", "ship", "nat-gas", "carcass", "hog", "oilseed", "palm-oil", "barley", "rice", "cocoa", "copper", "tin", "iron-steel"]
@@ -338,17 +498,28 @@ def prediction_with_threshold(t_preds, t_scores, threshold):
       new_preds.append(single)
   return new_preds
 
-if __name__=="__main__":
+def test():
+  config = cli.config
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
-  train_data = read_data("train", word2idx)
+  train_data = read_data(config, "train", word2idx)
   for batch in train_data.get_batches(60, shuffle=True, cluster=True):
     idxs, ds = batch
     for key, value in ds.data.items():
       print(key, value[0])
+      break
+    break
 
-  dev_data = read_data("test", word2idx, test_true_label=True)
+  dev_data = read_data(config, "test", word2idx)
   for batch in dev_data.get_batches(60, shuffle=True, cluster=True):
     idxs, ds = batch
     for key, value in ds.data.items():
       print(key, value[0])
+      break
+    break
 
+
+if __name__=="__main__":
+   trainf = open("data/train.txt", "w")
+   get_fasttext(trainf, "train")
+   testf = open("data/test.txt", "w")
+   get_fasttext(testf, "test")
