@@ -8,6 +8,8 @@ class Evaluation(object):
   def __init__(self, config, preds, labels):
     self.summaries = []
     preds = preds[:,2:-1]
+    assert  len(preds[0,:]) == len(labels[0,:])
+    #print(preds[0,:], labels[0,:], len(preds[0,:]), len(labels[0,:]))
     self.get_metric(preds, labels, average='micro', about='all')
     self.get_metric(preds, labels, average='weighted', about='all')
     if config.eval_layers:
@@ -41,7 +43,7 @@ class Evaluator(object):
     self.preds = model.preds
     self.scores = model.scores
     self.mlb = MultiLabelBinarizer()
-    self.mlb.fit([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]])
+    self.mlb.fit([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]])
 
   def get_metric(self, preds, labels, average=None, about="all", data_type="dev"):
     precisions, recalls, fscores, _ = precision_recall_fscore_support(labels, preds, average=average)

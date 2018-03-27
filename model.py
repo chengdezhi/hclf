@@ -63,7 +63,7 @@ class Model(object):
       self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
       self.check = self.first_attention
       
-    if config.model_name == "RCNN":
+    if config.model_name.startswith("RCNN"):
       outputs, output_states = tf.nn.bidirectional_dynamic_rnn(self.encode_lstm, self.encode_lstm, self.xx, dtype="float", sequence_length=self.x_seq_length)
       self.xx_context = tf.concat(outputs, 2)   # [None, DL, 2*hd]
       #self.xx_final = tf.concat([output_states[0][1], output_states[1][1]], 1)  # [None, 2*hd]
@@ -76,14 +76,18 @@ class Model(object):
 
   def _build_train(self, config):
     # decode
-    encoder_state = rnn.LSTMStateTuple(self.xx_final, self.xx_final)
-    attention_mechanism = BahdanauAttention(config.decode_size, memory=self.xx_context, memory_sequence_length=self.x_seq_length)
-    cell = AttentionWrapper(self.lstm, attention_mechanism, output_attention=False)
-    cell_state = cell.zero_state(dtype=tf.float32, batch_size=config.batch_size)
-    cell_state = cell_state.clone(cell_state=encoder_state, attention=self.first_attention)
-    train_helper = TrainingHelper(self.yy, self.y_seq_length)
-    train_decoder = BasicDecoder(cell, train_helper, cell_state, output_layer=self.output_l)
-    self.decoder_outputs_train, decoder_state_train, decoder_seq_train = dynamic_decode(train_decoder, impute_finished=True)
+    if config.model_name == "RCNN-flat":
+      self.logits = tf.contrib.layers.fully_connected(self.xx_final, config.n_classes)
+    else:
+      encoder_state = rnn.LSTMStateTuple(self.xx_final, self.xx_final)
+      attention_mechanism = BahdanauAttention(config.decode_size, memory=self.xx_context, memory_sequence_length=self.x_seq_length)
+      cell = AttentionWrapper(self.lstm, attention_mechanism, output_attention=False)
+      cell_state = cell.zero_state(dtype=tf.float32, batch_size=config.batch_size)
+      cell_state = cell_state.clone(cell_state=encoder_state, attention=self.first_attention)
+      train_helper = TrainingHelper(self.yy, self.y_seq_length)
+      train_decoder = BasicDecoder(cell, train_helper, cell_state, output_layer=self.output_l)
+      self.decoder_outputs_train, decoder_state_train, decoder_seq_train = dynamic_decode(train_decoder, impute_finished=True)
+      self.logits = self.decoder_outputs_train.rnn_output
 
   def _build_infer(self, config):
     # infer_decoder/beam_search  
@@ -96,9 +100,9 @@ class Model(object):
     tiled_xx_final = tile_batch(self.xx_final, config.beam_width)
     encoder_state2 = rnn.LSTMStateTuple(tiled_xx_final, tiled_xx_final)
     cell = AttentionWrapper(self.lstm, attention_mechanism, output_attention=False)
-    cell_state = cell.zero_state(dtype=tf.float32, batch_size = config.test_batch_size * config.beam_width)
+    cell_state = cell.zero_state(dtype=tf.float32, batch_size = config.dev_size * config.beam_width)
     cell_state = cell_state.clone(cell_state=encoder_state2, attention=tiled_first_attention)
-    infer_decoder = BeamSearchDecoder(cell, embedding=self.label_embeddings, start_tokens=[config.GO]*config.test_batch_size, end_token=config.EOS,
+    infer_decoder = BeamSearchDecoder(cell, embedding=self.label_embeddings, start_tokens=[config.GO]*config.dev_size, end_token=config.EOS,
                                   initial_state=cell_state, beam_width=config.beam_width, output_layer=self.output_l)
     decoder_outputs_infer, decoder_state_infer, decoder_seq_infer = dynamic_decode(infer_decoder, maximum_iterations=config.max_seq_length)
     self.preds = decoder_outputs_infer.predicted_ids
@@ -107,7 +111,10 @@ class Model(object):
   def _build_loss(self, config):
     # cost/evaluate/train
     weights = tf.sequence_mask(self.y_seq_length, config.max_seq_length, dtype=tf.float32)
-    self.loss = sequence_loss(logits=self.decoder_outputs_train.rnn_output, targets=self.y, weights=weights)
+    if config.model_name == "RCNN_flat":
+      self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels = self.y) # TODO self.y at multi-labels input 
+    else:
+      self.loss = sequence_loss(logits=self.decoder_outputs_train.rnn_output, targets=self.y, weights=weights)
     tf.summary.scalar(self.loss.op.name, self.loss) 
     # TODO process compute_gradients() and apply_gradients() separetely 
     self.train_op = tf.train.AdamOptimizer(learning_rate=config.learning_rate).minimize(self.loss, global_step=self.global_step)

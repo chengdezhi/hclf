@@ -34,7 +34,9 @@ def _train(config):
 
   train_data = read_data(config, data_type="train", word2idx=word2idx)
   dev_data = read_data(config, data_type="test", word2idx=word2idx)
-  
+  config.train_size = train_data.get_data_size()
+  config.dev_size = dev_data.get_data_size()
+  print("train/dev:", config.train_size, config.dev_size) 
   pprint(config.__flags, indent=2)
   model = get_model(config)
   graph_handler = GraphHandler(config, model)
@@ -62,6 +64,7 @@ def _train(config):
       continue
     # Occasional evaluation
     if global_step % config.eval_period == 0:
+      config.test_batch_size = config.dev_size
       num_steps = math.ceil(dev_data.num_examples / config.test_batch_size)
       if 0 < config.val_num_batches < num_steps:
         num_steps = config.val_num_batches
@@ -101,7 +104,6 @@ def _check(config):
     print("check:", check.shape, type(check), xx_final.shape, xx_context.shape)
 
 def _test(config):
-
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
   vocab_size = len(word2idx)
   word2vec = {} # or get_word2vec(word2idx)
