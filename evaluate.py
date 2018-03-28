@@ -7,9 +7,9 @@ from sklearn.metrics import precision_recall_fscore_support
 class Evaluation(object):
   def __init__(self, config, preds, labels):
     self.summaries = []
-    preds = preds[:,2:-1]
+    if config.model_name!="RCNN_flat": preds = preds[:,2:-1]
     assert  len(preds[0,:]) == len(labels[0,:])
-    #print(preds[0,:], labels[0,:], len(preds[0,:]), len(labels[0,:]))
+    print(preds[0,:], labels[0,:], len(preds[0,:]), len(labels[0,:]))
     self.get_metric(preds, labels, average='micro', about='all')
     self.get_metric(preds, labels, average='weighted', about='all')
     if config.eval_layers:
@@ -40,6 +40,7 @@ class Evaluator(object):
     self.config = config 
     self.model = model
     self.loss = model.loss
+    self.logits = model.logits
     self.preds = model.preds
     self.scores = model.scores
     self.mlb = MultiLabelBinarizer()
@@ -55,14 +56,27 @@ class Evaluator(object):
   def get_evaluation(self, sess, batch):
     batch_idx, batch_ds = batch
     feed_dict = self.model.get_feed_dict(batch, False)
-    #for key, val in feed_dict.items():
-    #  print(key, np.array(val).shape) 
-    # print("feed_dict:", feed_dict)
-    preds, scores = sess.run([self.preds, self.scores], feed_dict=feed_dict)
-    preds = prediction_with_threshold(preds, scores, threshold=self.config.multilabel_threshold)
-    preds = self.mlb.transform(preds)
-    labels = batch_ds.data["y_seqs"] 
-    return preds, labels
+    # check embedding bp
+    embedings = sess.run(self.model.word_embeddings)
+    print("check embeddings:", embedings)
+    if self.config.model_name=="RCNN_flat": 
+      logits, loss = sess.run([self.logits, self.loss], feed_dict=feed_dict)
+      preds = np.array([[i for i in range(config.n_classes)] for _ in range(test_size)])
+      preds = prediction_with_threshold(self.config, preds, logits, threshold=self.config.multilabel_threshold)
+      mlb = MultiLabelBinarizer()
+      mlb.fit([[0,1,2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]])
+      preds = mlb.transform(preds)
+      labels = batch_ds.data["y_seqs"] 
+      return preds, labels
+      
+    else:
+      preds, scores = sess.run([self.preds, self.scores], feed_dict=feed_dict)
+      print("check eval:", preds[0:3,:], scores[0:3,:], preds.shape, scores.shape)
+      preds = prediction_with_threshold(self.config, preds, scores, threshold=self.config.multilabel_threshold)
+      print("check eval:", preds[0:3])
+      preds = self.mlb.transform(preds)
+      labels = batch_ds.data["y_seqs"] 
+      return preds, labels
     
   def get_evaluation_from_batches(self, sess, batches):
     config = self.config

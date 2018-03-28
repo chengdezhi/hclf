@@ -10,6 +10,10 @@ def get_model(config):
     model = Model(config, scope)
   return model
 
+def get_initializer(matrix):
+    def _initializer(shape, dtype=None, partition_info=None, **kwargs): return matrix
+    return _initializer
+
 class Model(object):
   def __init__(self, config, scope):
     self.scope = scope
@@ -19,7 +23,10 @@ class Model(object):
                    initializer=tf.constant_initializer(0), trainable=False)
     self.x = tf.placeholder(tf.int32, [None, config.max_docs_length], name="x")      # [batch_size, max_doc_len]
     self.x_mask = tf.placeholder(tf.int32, [None, config.max_docs_length], name="x_mask")      # [batch_size, max_doc_len]
-    self.y = tf.placeholder(tf.int32, [None, max_seq_length], name="y")
+    if config.model_name == "RCNN_flat":
+      self.y = tf.placeholder(tf.int32, [None, config.n_classes], name="y")
+    else:
+      self.y = tf.placeholder(tf.int32, [None, max_seq_length], name="y")
     self.y_mask = tf.placeholder(tf.int32, [None, max_seq_length], name="y_mask")
     self.y_decoder = tf.placeholder(tf.int32, [None, max_seq_length], name="y-decoder")
     self.x_seq_length = tf.placeholder(tf.int32, [None], name="x_seq_length")
@@ -31,13 +38,15 @@ class Model(object):
     self.lstm = rnn.LayerNormBasicLSTMCell(config.decode_size, dropout_keep_prob=config.keep_prob)  # lstm for decode 
     self.encode_lstm = rnn.LayerNormBasicLSTMCell(config.hidden_size, dropout_keep_prob=config.keep_prob) # lstm for encode 
     # TODO config.emb_mat 
-    self.word_embeddings = tf.constant(config.emb_mat, dtype=tf.float32, name="word_embeddings")
+    # self.word_embeddings = tf.constant(config.emb_mat, dtype=tf.float32, name="word_embeddings")
+    self.word_embeddings = tf.get_variable("word_embeddings", dtype='float', shape=[config.vocab_size, config.word_embedding_size], initializer=get_initializer(config.emb_mat))
     self.label_embeddings = tf.get_variable(name="label_embeddings", shape=[config.n_classes, config.label_embedding_size], dtype=tf.float32)
     self.xx = tf.nn.embedding_lookup(self.word_embeddings, self.x)  # [None, DL, d]    
     self.yy = tf.nn.embedding_lookup(self.label_embeddings, self.y_decoder) # [None, seq_l, d]    
     self._build_encode(config)
     self._build_train(config)
-    self._build_infer(config)
+    if not config.model_name == "RCNN-flat":
+      self._build_infer(config)
     self._build_loss(config)
     #self.infer_set = set()
     self.summary = tf.summary.merge_all()
@@ -90,9 +99,8 @@ class Model(object):
       self.logits = self.decoder_outputs_train.rnn_output
 
   def _build_infer(self, config):
-    # infer_decoder/beam_search  
-    if config.model_name == "hclf_bilstm": decode_size = 2*config.hidden_size
-    else: decode_size = config.hidden_size  
+    # infer_decoder/beam_search 
+    # skip for flat_baseline  
     tiled_inputs = tile_batch(self.xx_context, multiplier=config.beam_width)
     tiled_sequence_length = tile_batch(self.x_seq_length, multiplier=config.beam_width)
     tiled_first_attention = tile_batch(self.first_attention, multiplier=config.beam_width)
@@ -114,7 +122,7 @@ class Model(object):
     if config.model_name == "RCNN_flat":
       self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels = self.y) # TODO self.y at multi-labels input 
     else:
-      self.loss = sequence_loss(logits=self.decoder_outputs_train.rnn_output, targets=self.y, weights=weights)
+      self.loss = sequence_loss(logits=self.logits, targets=self.y, weights=weights)
     tf.summary.scalar(self.loss.op.name, self.loss) 
     # TODO process compute_gradients() and apply_gradients() separetely 
     self.train_op = tf.train.AdamOptimizer(learning_rate=config.learning_rate).minimize(self.loss, global_step=self.global_step)
@@ -136,4 +144,3 @@ class Model(object):
     else:
       feed_dict[self.keep_prob] = 1
     return feed_dict
- 

@@ -76,7 +76,7 @@ class DataSet(object):
 
 def read_data(config, data_type="train", word2idx=None, max_seq_length=4):
   print("preparing {} data".format(data_type)) 
-  docs, label_seqs, decode_inps, seq_lens = load_hclf_reuters(data_type=data_type)
+  docs, label_seqs, decode_inps, seq_lens = load_hclf_reuters(config, data_type=data_type)
   docs = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
   docs_filter = [] 
   filter_ids = []
@@ -130,26 +130,33 @@ def tokenize(text):
   return filtered_tokens
 
 
-def get_word2vec(word_counter):
-  glove_path = os.path.join("/home/t-dechen/data/glove", "glove.{}.{}d.txt".format("6B", 300))
-  sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
-  total = sizes['6B']
+def get_word2vec(config, word_counter):
   word2vec_dict = {}
-  with open(glove_path, 'r', encoding='utf-8') as fh:
-      for line in tqdm(fh, total=total):
-          array = line.lstrip().rstrip().split(" ")
-          word = array[0]
-          vector = list(map(float, array[1:]))
-          if word in word_counter:
-              word2vec_dict[word] = vector
-          elif word.capitalize() in word_counter:
-              word2vec_dict[word.capitalize()] = vector
-          elif word.lower() in word_counter:
-              word2vec_dict[word.lower()] = vector
-          elif word.upper() in word_counter:
-              word2vec_dict[word.upper()] = vector
+  if config.pretrain_from == "wiki_en_vec":
+    w2v_path = "/data/dechen/w2v/wiki.en.vec"
+    w2v_f = open(w2v_path, "r")
+  else:  
+    w2v_path = os.path.join("/home/t-dechen/data/glove", "glove.{}.{}d.txt".format("6B", 300))
+    w2v_f = open(w2v_path, "r")
+    sizes = {'6B': int(4e5), '42B': int(1.9e6), '840B': int(2.2e6), '2B': int(1.2e6)}
+    total = sizes['6B']
+  w2v = [line for line in w2v_f]
+  total = len(w2v)
+   
+  for line in tqdm(w2v, total=total):
+    array = line.lstrip().rstrip().split(" ")
+    word = array[0]
+    vector = list(map(float, array[1:]))
+    if word in word_counter:
+      word2vec_dict[word] = vector
+    elif word.capitalize() in word_counter:
+      word2vec_dict[word.capitalize()] = vector
+    elif word.lower() in word_counter:
+      word2vec_dict[word.lower()] = vector
+    elif word.upper() in word_counter:
+      word2vec_dict[word.upper()] = vector
 
-  print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), glove_path))
+  print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), w2v_path))
   return word2vec_dict
 
 def load_data():
@@ -211,7 +218,7 @@ def prepare_data(data_type="train", word2idx=None, max_seq_length=4, test_true_l
   print(data_type, len(seq_lens))
   return np.array(docs2mat), np.array(docs2mask), np.array(docs_len), np.array(label_seqs), np.array(decode_inps), np.array(seq_lens), np.array(y_seq_mask), len(seq_lens)
      
-def load_hclf_reuters(data_type="train", allow_internal=True, in_hierarchy=True):
+def load_hclf_reuters(config, data_type="train", allow_internal=True, in_hierarchy=True):
   label2id = {
               "grain":3, "crude":4, "livestock":10, "veg-oil":11, "meal-feed":17, "strategic-metal":19, 
               "corn":5,  "wheat":6, "ship":7, "nat-gas":8, 
@@ -256,6 +263,8 @@ def load_hclf_reuters(data_type="train", allow_internal=True, in_hierarchy=True)
 
 
   mlb = MultiLabelBinarizer()
+  mlb.fit([[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]])  # for flat clf, actualy 18 labels 
+  
   documents = reuters.fileids()
   documents = list(filter(lambda doc: doc.startswith(data_type),  documents))
 
@@ -278,10 +287,11 @@ def load_hclf_reuters(data_type="train", allow_internal=True, in_hierarchy=True)
                 if len(set(seq)-set(doc_hcl))==0: repeat=True
             if not repeat: 
                 doc_hcls.append(seq)
-                if data_type=="train": _process(doc_id, seq, target, d_input)
+                if data_type=="train" and config.model_name!="RCNN_flat":
+                  _process(doc_id, seq, target, d_input)
       if hit : positive_cnt += 1
             
-      if data_type == "test" and hit:
+      if (data_type == "test" or config.model_name=="RCNN_flat") and hit:
           tl = set()
           for doc_hcl in doc_hcls: tl = tl | set(doc_hcl)
           tl = list(tl)
@@ -290,7 +300,7 @@ def load_hclf_reuters(data_type="train", allow_internal=True, in_hierarchy=True)
           decode_inp.append([1,0,0,0])   # 1 start 
           seq_len.append(1)
   print(data_type, len(documents), len(docs), positive_cnt)
-  if data_type=="test":  label_seqs = mlb.fit_transform(label_seqs)
+  if data_type=="test" or config.model_name=="RCNN_flat":  label_seqs = mlb.fit_transform(label_seqs)
   return docs, label_seqs, decode_inp, seq_len                 
 
 def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
@@ -300,7 +310,14 @@ def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
               "carcass":12, "hog":13, "oilseed":14, "palm-oil":15, 
               "barley":18
              }
-  
+  first_layer = [2, 9, 16]
+  second_layer = [3, 4, 10, 11, 17, 19]
+  third_layer = [5, 6, 7, 8, 12, 13, 14, 15, 18]  
+
+  tree_1 = [2,3,4,5,6,7,8]
+  tree_2 = [9,10,11,12,13,14,15]
+  tree_3 = [16,17,18,19]
+
   # 23
   seqs    = [
              [2,3], [2,4], [9,10], [9,11], [16,17], [16,19],
@@ -326,6 +343,7 @@ def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
   cnt = 0
   check_cnt = 0
   positive_cnt = 0
+  filter_positive_cnt = 0
    
   label2cnt = defaultdict(int)
   for doc_id in documents:
@@ -350,24 +368,36 @@ def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
           for doc_hcl in doc_hcls: tl = tl | set(doc_hcl)
           tl = list(tl)
           for l_id in tl: label2cnt[l_id] += 1
-          text = " ".join(tokenize(reuters.raw(doc_id))) 
+          text = " ".join(tokenize(reuters.raw(doc_id)))
+          if len(text) ==0 : continue 
+          filter_positive_cnt += 1
           line = text 
           for l_id in tl:  line += "\t" + "__label__" + str(l_id)
           f.write(line+"\n")
-  print(data_type)
+  print(data_type, positive_cnt, filter_positive_cnt)
   for i in range(25): print(i, label2cnt[i])
 
-def prediction_with_threshold(t_preds, t_scores, threshold):
-  t_preds[t_preds == -1] = 0                               
-  new_preds = []                                                         
-  t_preds = t_preds.transpose((0, 2, 1))
-  for i in range(t_preds.shape[0]):
+def prediction_with_threshold(config, t_preds, t_scores, threshold):
+  if config.model_name == "RCNN_flat":
+    new_preds = []                                                         
+    for i in range(t_preds.shape[0]):
       single = []
       for j in range(t_preds.shape[1]):
-          if t_scores[i, j] > threshold or j==0:
-              single += t_preds[i, j].tolist()
+        if t_scores[i, j] > threshold or j==0:
+          single += [t_preds[i,j]] 
+    new_preds.append(single)
+    return new_preds
+  else:
+    t_preds[t_preds == -1] = 0  # set -1 to 0
+    new_preds = []                                                         
+    t_preds = t_preds.transpose((0, 2, 1))
+    for i in range(t_preds.shape[0]):
+      single = []
+      for j in range(t_preds.shape[1]):
+        if t_scores[i, j] > threshold or j==0:
+          single += t_preds[i, j].tolist()
       new_preds.append(single)
-  return new_preds
+    return new_preds
 
 def test():
   import cli

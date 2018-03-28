@@ -26,10 +26,11 @@ def main(config):
 def _train(config):
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
   vocab_size = len(word2idx)
-  word2vec = {} if config.debug else get_word2vec(word2idx)
+  word2vec = {} if config.debug else get_word2vec(config, word2idx)
   idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
+  config.vocab_size = vocab_size 
   print("emb_mat:", config.emb_mat.shape)
 
   train_data = read_data(config, data_type="train", word2idx=word2idx)
@@ -55,6 +56,7 @@ def _train(config):
     get_summary = global_step % config.log_period  
     feed_dict = model.get_feed_dict(batch, config)
     loss, summary, train_op = sess.run([model.loss, model.summary, model.train_op], feed_dict=feed_dict)
+    print("loss:", loss)
     if get_summary:
       graph_handler.add_summary(summary, global_step)
     # occasional saving
@@ -65,12 +67,12 @@ def _train(config):
     # Occasional evaluation
     if global_step % config.eval_period == 0:
       config.test_batch_size = config.dev_size
-      num_steps = math.ceil(dev_data.num_examples / config.test_batch_size)
+      num_steps = math.ceil(dev_data.num_examples / config.dev_size)
       if 0 < config.val_num_batches < num_steps:
         num_steps = config.val_num_batches
       # print("num_steps:", num_steps)
       e_dev = dev_evaluate.get_evaluation_from_batches(
-        sess, tqdm(dev_data.get_batches(config.test_batch_size, num_batches=num_steps), total=num_steps))
+        sess, tqdm(dev_data.get_batches(config.dev_size, num_batches=num_steps), total=num_steps))
       graph_handler.add_summaries(e_dev.summaries, global_step)
       
 def _check(config):
@@ -80,6 +82,7 @@ def _check(config):
   idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
+  config.vocab_size = vocab_size 
   print("emb_mat:", config.emb_mat.shape)
 
   train_data = read_data(config, data_type="train", word2idx=word2idx)
@@ -106,12 +109,13 @@ def _check(config):
 def _test(config):
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
   vocab_size = len(word2idx)
-  word2vec = {} # or get_word2vec(word2idx)
+  word2vec = {} #  get_word2vec(config, word2idx)
   idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
-
+  config.vocab_size = vocab_size 
   dev_data = read_data(config, data_type="test", word2idx=word2idx)
+  config.dev_size = dev_data.get_data_size()
   # if config.use_glove_for_unk:
   pprint(config.__flags, indent=2)
   model = get_model(config)
@@ -120,12 +124,12 @@ def _test(config):
   graph_handler.initialize(sess)
   
   dev_evaluate = Evaluator(config, model) 
-  num_steps = math.ceil(dev_data.num_examples / config.test_batch_size)
+  num_steps = math.ceil(dev_data.num_examples / config.dev_size)
   if 0 < config.val_num_batches < num_steps:
     num_steps = config.val_num_batches
   # print("num_steps:", num_steps)
   e_dev = dev_evaluate.get_evaluation_from_batches(
-    sess, tqdm(dev_data.get_batches(config.test_batch_size, num_batches=num_steps), total=num_steps))
+    sess, tqdm(dev_data.get_batches(config.dev_size, num_batches=num_steps), total=num_steps))
 
 def _forward(config):
   pass

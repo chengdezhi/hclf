@@ -36,7 +36,8 @@ flags.DEFINE_integer("GO", 1, "")
 flags.DEFINE_string("mode", "train", "")
 flags.DEFINE_string("model_name", "RCNN", "")   # RCNN 
 flags.DEFINE_string("load_path", "", "")   # RCNN 
-flags.DEFINE_integer("max_to_keep", 30, "")
+flags.DEFINE_string("pretrain_from", "wiki_en_vec", "")   # RCNN 
+flags.DEFINE_integer("max_to_keep", 100, "")
 
 flags.DEFINE_boolean("load", False, "load saved data? [True]")
 flags.DEFINE_boolean("load_ema", False, "load saved data? [True]")
@@ -70,7 +71,10 @@ def main(_):
     config.batch_size = 3
     config.val_num_batches = 6
     config.out_dir = "debug"
-  print(config.test_batch_size)
+  #print(config.test_batch_size)
+  if config.model_name == "RCNN_flat":  
+    config.n_classes = 18
+    config.multilabel_threshold = 0.053
   config.tree1 = np.array([2,3,4,5,6,7,8])
   config.tree2 = np.array([9,10,11,12,13,14,15])
   config.tree3 = np.array([16,17,18,19])
