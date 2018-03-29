@@ -179,12 +179,18 @@ def get_word2idx():
   word2idx = Counter()
   word2idx["UNK"] = 0
   word2idx["NULL"] = 1  # for pad 
+  idx2word = []
+  idx2word += ["UNK", "NULL"]
   for doc in docs:
       max_docs_length = len(doc) if len(doc) > max_docs_length else max_docs_length
       for token in doc:
-          word2idx[token] = len(word2idx)
-  
-  shared = {"word2idx": word2idx}
+          if token not in word2idx:
+            word2idx[token] = len(word2idx)
+            idx2word += [token]
+  print(len(word2idx))
+  #for i in range(len(idx2word)):
+  #  print(idx2word[i], word2idx[idx2word[i]])
+  shared = {"word2idx": word2idx, "idx2word":idx2word}
   json.dump(shared, open("data/word2idx_new.json", "w"))
     
     

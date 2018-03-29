@@ -28,7 +28,7 @@ def _train(config):
   vocab_size = len(word2idx)
   word2vec = Counter(json.load(open("data/word2vec_{}.json".format(config.pretrain_from), "r"))["word2vec"])
   # word2vec = {} if config.debug or config.load  else get_word2vec(config, word2idx)
-  idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
+  idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx and word!="UNK"}
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
   config.vocab_size = vocab_size 
@@ -89,7 +89,7 @@ def _check(config):
   vocab_size = len(word2idx)
   #word2vec = {} # or get_word2vec(word2idx)
   word2vec = Counter(json.load(open("data/word2vec_{}.json".format(config.pretrain_from), "r"))["word2vec"])
-  idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
+  idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx and word!="UNK"}
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
   config.vocab_size = vocab_size 
@@ -118,9 +118,10 @@ def _check(config):
     print("check:", check.shape, type(check), xx_final.shape, xx_context.shape)
 
 def _test(config):
-  word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
+  word2idx = Counter(json.load(open("data/word2idx_new.json", "r"))["word2idx"])
   vocab_size = len(word2idx)
-  word2vec = {} #  get_word2vec(config, word2idx)
+  word2vec = Counter(json.load(open("data/word2vec_{}.json".format(config.pretrain_from), "r"))["word2vec"])
+  # word2vec = {} if config.debug or config.load  else get_word2vec(config, word2idx)
   idx2vec = {word2idx[word]: vec for word, vec in word2vec.items() if word in word2idx}
   unk_embedding = np.random.multivariate_normal(np.zeros(config.word_embedding_size), np.eye(config.word_embedding_size))
   config.emb_mat = np.array([idx2vec[idx] if idx in idx2vec else unk_embedding for idx in range(vocab_size)])
