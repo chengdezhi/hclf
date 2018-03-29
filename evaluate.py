@@ -9,7 +9,8 @@ class Evaluation(object):
     self.summaries = []
     if config.model_name!="RCNN_flat": preds = preds[:,2:-1]
     assert  len(preds[0,:]) == len(labels[0,:])
-    print(preds[0,:], labels[0,:], len(preds[0,:]), len(labels[0,:]))
+    
+    print(preds[0,:], labels[0,:], len(preds[0,:]), len(labels[0,:]), preds.shape, labels.shape)
     self.get_metric(preds, labels, average='micro', about='all')
     self.get_metric(preds, labels, average='weighted', about='all')
     if config.eval_layers:
@@ -41,10 +42,13 @@ class Evaluator(object):
     self.model = model
     self.loss = model.loss
     self.logits = model.logits
-    self.preds = model.preds
-    self.scores = model.scores
     self.mlb = MultiLabelBinarizer()
-    self.mlb.fit([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]])
+    if self.config.model_name!="RCNN_flat": 
+      self.preds = model.preds
+      self.scores = model.scores
+      self.mlb.fit([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]])
+    else:
+      self.mlb.fit([[0,1,2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]])
 
   def get_metric(self, preds, labels, average=None, about="all", data_type="dev"):
     precisions, recalls, fscores, _ = precision_recall_fscore_support(labels, preds, average=average)
@@ -55,17 +59,20 @@ class Evaluator(object):
 
   def get_evaluation(self, sess, batch):
     batch_idx, batch_ds = batch
+    
     feed_dict = self.model.get_feed_dict(batch, False)
     # check embedding bp
     embedings = sess.run(self.model.word_embeddings)
     print("check embeddings:", embedings)
     if self.config.model_name=="RCNN_flat": 
+      test_size = batch_ds.get_data_size()
       logits, loss = sess.run([self.logits, self.loss], feed_dict=feed_dict)
-      preds = np.array([[i for i in range(config.n_classes)] for _ in range(test_size)])
+      print("logits:", logits)
+      preds = np.array([[i for i in range(self.config.n_classes)] for _ in range(test_size)])
+      print("preds:", preds.shape)
+
       preds = prediction_with_threshold(self.config, preds, logits, threshold=self.config.multilabel_threshold)
-      mlb = MultiLabelBinarizer()
-      mlb.fit([[0,1,2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]])
-      preds = mlb.transform(preds)
+      preds = self.mlb.transform(preds)
       labels = batch_ds.data["y_seqs"] 
       return preds, labels
       

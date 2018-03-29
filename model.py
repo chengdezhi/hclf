@@ -26,7 +26,7 @@ class Model(object):
     if config.model_name == "RCNN_flat":
       self.y = tf.placeholder(tf.int32, [None, config.n_classes], name="y")
     else:
-      self.y = tf.placeholder(tf.int32, [None, max_seq_length], name="y")
+      self.y = tf.placeholder(tf.int32, [None, config.max_seq_length], name="y")
     self.y_mask = tf.placeholder(tf.int32, [None, max_seq_length], name="y_mask")
     self.y_decoder = tf.placeholder(tf.int32, [None, max_seq_length], name="y-decoder")
     self.x_seq_length = tf.placeholder(tf.int32, [None], name="x_seq_length")
@@ -54,7 +54,8 @@ class Model(object):
   
   def _build_encode(self, config):
     if config.model_name == "hclf_baseline":
-      outputs, output_states = tf.nn.dynamic_rnn(self.encode_lstm, self.xx, dtype='float', sequence_length=self.x_seq_length)  
+      outputs, output_states = tf.nn.dynamic_rnn(self.encode_lstm, self.xx, dtype='float', sequence_length=self.x_seq_length, time_major=True)
+      outputs = tf.transpose(outputs, [1, 0, 2])  
       self.check = outputs  
       self.xx_context = outputs  # tf.concat(outputs, 2)   # [None, DL, 2*hd]
       self.xx_final = output_states[1]  # lstm cell output_states: [c,h]
@@ -85,8 +86,10 @@ class Model(object):
 
   def _build_train(self, config):
     # decode
-    if config.model_name == "RCNN-flat":
+    if config.model_name == "RCNN_flat":
       self.logits = tf.contrib.layers.fully_connected(self.xx_final, config.n_classes)
+      print(self.logits.get_shape())
+      self.logits = tf.reshape(self.logits, [-1, config.n_classes])
     else:
       encoder_state = rnn.LSTMStateTuple(self.xx_final, self.xx_final)
       attention_mechanism = BahdanauAttention(config.decode_size, memory=self.xx_context, memory_sequence_length=self.x_seq_length)
@@ -118,11 +121,12 @@ class Model(object):
 
   def _build_loss(self, config):
     # cost/evaluate/train
-    weights = tf.sequence_mask(self.y_seq_length, config.max_seq_length, dtype=tf.float32)
     if config.model_name == "RCNN_flat":
-      self.loss = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels = self.y) # TODO self.y at multi-labels input 
+      self.losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels = self.y) # TODO self.y at multi-labels input 
+      self.loss = tf.reduce_mean(self.losses) 
     else:
-      self.loss = sequence_loss(logits=self.logits, targets=self.y, weights=weights)
+      self.weights = tf.sequence_mask(self.y_seq_length, config.max_seq_length, dtype=tf.float32)
+      self.loss = sequence_loss(logits=self.logits, targets=self.y, weights=self.weights)
     tf.summary.scalar(self.loss.op.name, self.loss) 
     # TODO process compute_gradients() and apply_gradients() separetely 
     self.train_op = tf.train.AdamOptimizer(learning_rate=config.learning_rate).minimize(self.loss, global_step=self.global_step)
@@ -138,9 +142,11 @@ class Model(object):
     feed_dict[self.x_seq_length] = batch_ds["x_len"]
     feed_dict[self.y_decoder] = batch_ds["decode_inps"]
     feed_dict[self.y_seq_length] = batch_ds["y_len"]
-    if is_train:
-      feed_dict[self.keep_prob] = self.config.keep_prob
+    if self.config.model_name == "RCNN_flat":
       feed_dict[self.y] = batch_ds["y_seqs"]
+    if is_train:
+      feed_dict[self.y] = batch_ds["y_seqs"]
+      feed_dict[self.keep_prob] = self.config.keep_prob
     else:
       feed_dict[self.keep_prob] = 1
     return feed_dict

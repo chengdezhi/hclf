@@ -132,7 +132,7 @@ def tokenize(text):
 
 def get_word2vec(config, word_counter):
   word2vec_dict = {}
-  if config.pretrain_from == "wiki_en_vec":
+  if config.pretrain_from == "wiki.en.vec":
     w2v_path = "/data/dechen/w2v/wiki.en.vec"
     w2v_f = open(w2v_path, "r")
   else:  
@@ -155,7 +155,8 @@ def get_word2vec(config, word_counter):
       word2vec_dict[word.lower()] = vector
     elif word.upper() in word_counter:
       word2vec_dict[word.upper()] = vector
-
+  shared = {"word2vec": word2vec_dict}
+  json.dump(shared, open("data/word2vec_{}.json".format(config.pretrain_from), "w"))
   print("{}/{} of word vocab have corresponding vectors in {}".format(len(word2vec_dict), len(word_counter), w2v_path))
   return word2vec_dict
 
@@ -166,8 +167,13 @@ def load_data():
 
 
 def get_word2idx():
-  docs, label_seqs, decode_inp, seq_len = load_hclf_data(data_type="train")
-  docs = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
+  import cli
+  config = cli.config
+  docs, label_seqs, decode_inp, seq_len = load_hclf_reuters(config, "train")
+  docs_train = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
+  docs, label_seqs, decode_inp, seq_len = load_hclf_reuters(config, "test")
+  docs_test = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
+  docs = docs_train + docs_test
   max_docs_length = 0
   
   word2idx = Counter()
@@ -179,7 +185,7 @@ def get_word2idx():
           word2idx[token] = len(word2idx)
   
   shared = {"word2idx": word2idx}
-  json.dump(shared, open("data/word2idx.json", "w"))
+  json.dump(shared, open("data/word2idx_new.json", "w"))
     
     
 def prepare_data(data_type="train", word2idx=None, max_seq_length=4, test_true_label=False):
@@ -385,7 +391,7 @@ def prediction_with_threshold(config, t_preds, t_scores, threshold):
       for j in range(t_preds.shape[1]):
         if t_scores[i, j] > threshold or j==0:
           single += [t_preds[i,j]] 
-    new_preds.append(single)
+      new_preds.append(single)
     return new_preds
   else:
     t_preds[t_preds == -1] = 0  # set -1 to 0
@@ -436,4 +442,4 @@ def test_group():
 
 if __name__=="__main__":
   #test_group()
-  test_gf()
+  get_word2idx()

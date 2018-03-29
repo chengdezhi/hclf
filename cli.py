@@ -10,7 +10,7 @@ flags.DEFINE_string("device_type", "gpu", "Run ID [0]")
 flags.DEFINE_integer("gpu_idx", 0, "")
 
 # training
-flags.DEFINE_float("learning_rate", 1e-3, "learning_rate")
+flags.DEFINE_float("learning_rate", 0.0005, "learning_rate")
 flags.DEFINE_float("keep_prob", 0.8, "keep_prob")
 flags.DEFINE_integer("num_batches", 600, "")
 flags.DEFINE_integer("batch_size", 100, "")
@@ -18,8 +18,8 @@ flags.DEFINE_integer("test_batch_size", 67, "")
 # TODO check epoch 
 flags.DEFINE_integer("num_epochs", 200, "")
 flags.DEFINE_integer("log_period", 30, "")
-flags.DEFINE_integer("eval_period", 30, "")
-flags.DEFINE_integer("save_period", 30, "")
+flags.DEFINE_integer("eval_period", 4, "")
+flags.DEFINE_integer("save_period", 4, "")
 flags.DEFINE_integer("val_num_batches", 0, "")
 
 # network 
@@ -36,7 +36,7 @@ flags.DEFINE_integer("GO", 1, "")
 flags.DEFINE_string("mode", "train", "")
 flags.DEFINE_string("model_name", "RCNN", "")   # RCNN 
 flags.DEFINE_string("load_path", "", "")   # RCNN 
-flags.DEFINE_string("pretrain_from", "wiki_en_vec", "")   # RCNN 
+flags.DEFINE_string("pretrain_from", "wiki.en.vec", "")   # RCNN 
 flags.DEFINE_integer("max_to_keep", 100, "")
 
 flags.DEFINE_boolean("load", False, "load saved data? [True]")
@@ -64,7 +64,7 @@ config = flags.FLAGS
 def main(_):
   if config.debug:
     #config.mode = "check"
-    config.num_batches = 2
+    config.num_batches = 100
     config.log_period = 1
     config.save_period = 1
     config.eval_period = 1
