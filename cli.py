@@ -14,7 +14,7 @@ flags.DEFINE_float("learning_rate", 0.0005, "learning_rate")
 flags.DEFINE_float("keep_prob", 0.8, "keep_prob")
 flags.DEFINE_integer("num_batches", 600, "")
 flags.DEFINE_integer("batch_size", 100, "")
-flags.DEFINE_integer("test_batch_size", 67, "")
+flags.DEFINE_integer("test_batch_size", 133, "")
 # TODO check epoch 
 flags.DEFINE_integer("num_epochs", 200, "")
 flags.DEFINE_integer("log_period", 30, "")
@@ -31,6 +31,8 @@ flags.DEFINE_float("multilabel_threshold", -2.0, "")
 flags.DEFINE_integer("EOS", 20, "")
 flags.DEFINE_integer("PAD", 0, "")
 flags.DEFINE_integer("GO", 1, "")
+flags.DEFINE_boolean("project", False, "")
+flags.DEFINE_boolean("concat_w2v", True, "")
 
 # graph control
 flags.DEFINE_string("mode", "train", "")
@@ -68,7 +70,7 @@ def main(_):
     config.log_period = 1
     config.save_period = 1
     config.eval_period = 1
-    config.batch_size = 3
+    config.batch_size = 20
     config.val_num_batches = 6
     config.out_dir = "debug"
   #print(config.test_batch_size)

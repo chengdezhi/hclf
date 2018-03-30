@@ -61,12 +61,9 @@ class Evaluator(object):
     batch_idx, batch_ds = batch
     
     feed_dict = self.model.get_feed_dict(batch, False)
-    # check embedding bp
-    embedings = sess.run(self.model.word_embeddings)
-    print("check embeddings:", embedings)
     if self.config.model_name=="RCNN_flat": 
       test_size = batch_ds.get_data_size()
-      logits, loss = sess.run([self.logits, self.loss], feed_dict=feed_dict)
+      logits, loss = sess.run([self.model.prob, self.loss], feed_dict=feed_dict)
       print("logits:", logits)
       preds = np.array([[i for i in range(self.config.n_classes)] for _ in range(test_size)])
       print("preds:", preds.shape)
@@ -78,7 +75,7 @@ class Evaluator(object):
       
     else:
       preds, scores = sess.run([self.preds, self.scores], feed_dict=feed_dict)
-      print("check eval:", preds[0:3,:], scores[0:3,:], preds.shape, scores.shape)
+      #print("check eval:", preds[0:3,:], scores[0:3,:], preds.shape, scores.shape)
       preds = prediction_with_threshold(self.config, preds, scores, threshold=self.config.multilabel_threshold)
       print("check eval:", preds[0:3])
       preds = self.mlb.transform(preds)

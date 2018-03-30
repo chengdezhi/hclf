@@ -64,6 +64,7 @@ def _train(config):
     get_summary = global_step % config.log_period  
     feed_dict = model.get_feed_dict(batch, config)
     logits, y, y_len, loss, summary, train_op = sess.run([model.logits, model.y, model.y_seq_length,  model.loss, model.summary, model.train_op], feed_dict=feed_dict)
+    #print("logits:", logits[0:3], y[0:3], y_len[0:3], logits.shape, y.shape, y_len.shape) 
     #print("check:", logits[0,:], y[0,:], y_len[0], logits.shape, y.shape, y_len.shape)
     print("loss:", loss)
     if get_summary:
@@ -75,13 +76,13 @@ def _train(config):
       continue
     # Occasional evaluation
     if global_step % config.eval_period == 0:
-      config.test_batch_size = config.dev_size
-      num_steps = math.ceil(dev_data.num_examples / config.dev_size)
+      #config.test_batch_size = config.dev_size/3
+      num_steps = math.ceil(dev_data.num_examples / config.test_batch_size)
       if 0 < config.val_num_batches < num_steps:
         num_steps = config.val_num_batches
       # print("num_steps:", num_steps)
       e_dev = dev_evaluate.get_evaluation_from_batches(
-        sess, tqdm(dev_data.get_batches(config.dev_size, num_batches=num_steps), total=num_steps))
+        sess, tqdm(dev_data.get_batches(config.test_batch_size, num_batches=num_steps), total=num_steps))
       graph_handler.add_summaries(e_dev.summaries, global_step)
       
 def _check(config):
@@ -136,12 +137,12 @@ def _test(config):
   graph_handler.initialize(sess)
   
   dev_evaluate = Evaluator(config, model) 
-  num_steps = math.ceil(dev_data.num_examples / config.dev_size)
+  num_steps = math.ceil(dev_data.num_examples / config.test_batch_size)
   if 0 < config.val_num_batches < num_steps:
     num_steps = config.val_num_batches
   # print("num_steps:", num_steps)
   e_dev = dev_evaluate.get_evaluation_from_batches(
-    sess, tqdm(dev_data.get_batches(config.dev_size, num_batches=num_steps), total=num_steps))
+    sess, tqdm(dev_data.get_batches(config.test_batch_size, num_batches=num_steps), total=num_steps))
 
 def _forward(config):
   pass
