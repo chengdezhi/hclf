@@ -1,80 +1,15 @@
 from nltk.corpus import stopwords, reuters
 from nltk import word_tokenize
 from nltk.stem.porter import PorterStemmer
-from collections import Counter
 import numpy as np
-from collections import Counter
 import re, json, os, math, random, itertools
 from itertools import zip_longest
 from collections import Counter, defaultdict
 from sklearn.preprocessing import MultiLabelBinarizer
 from tqdm import tqdm
+from common import MyEncoder, DataSet
 
-def grouper(iterable, n, fillvalue=None, shorten=False, num_groups=None):
-  args = [iter(iterable)] * n
-  out = zip_longest(*args, fillvalue=fillvalue)
-  out = list(out)
-  if num_groups is not None:
-    default = (fillvalue, ) * n
-    assert isinstance(num_groups, int)
-    out = list(each for each, _ in zip_longest(out, range(num_groups), fillvalue=default))
-  if shorten:
-    assert fillvalue is None
-    out = (tuple(e for e in each if e is not None) for each in out)
-  return out
-
-class DataSet(object):
-  def __init__(self, data, data_type, valid_idxs= None):
-    self.data = data  # {x:[], y:[]}  etc
-    self.data_type = data_type
-    total_num_examples = self.get_data_size()
-    self.valid_idxs = range(total_num_examples) if valid_idxs is None else valid_idxs
-    self.num_examples = len(self.valid_idxs)
-   
-  def _sort_key(self, idx):
-    x = self.data["x"][idx]
-    return len(x)
-
-  def get_data_size(self):
-    assert isinstance(self.data, dict)
-    return len(next(iter(self.data.values())))
-
-  def get_by_idxs(self, idxs):
-    assert isinstance(self.data, dict)
-    out = defaultdict(list)
-    for key, val in self.data.items():
-      out[key].extend(val[idx] for idx in idxs)
-    return out
-
-  def get_batches(self, batch_size, num_batches=None, shuffle=False, cluster=False):
-    num_batches_per_epoch = int(math.ceil(self.num_examples / batch_size))
-    if num_batches is None:
-      num_batches = num_batches_per_epoch
-    num_epochs = int(math.ceil(num_batches / num_batches_per_epoch))
-    
-    if shuffle:
-      random_idxs = random.sample(self.valid_idxs, (num_batches_per_epoch-1)*batch_size) # shuffle 
-      if cluster:
-        sorted_idxs = sorted(random_idxs, key=self._sort_key)
-        sorted_grouped = lambda: list(grouper(sorted_idxs, batch_size))
-        grouped = lambda: random.sample(sorted_grouped(), num_batches_per_epoch)
-      else:
-        random_grouped = lambda: list(grouper(random_idxs, batch_size))
-        grouped = random_grouped
-    else:
-      raw_grouped = lambda: list(grouper(self.valid_idxs, batch_size))
-      grouped = raw_grouped
-
-    batch_idx_tuples = itertools.chain.from_iterable(grouped() for _ in range(num_epochs))
-    
-    for _ in range(num_batches):
-      batch_idxs = tuple(i for i in next(batch_idx_tuples) if i is not None)
-      batch_data = self.get_by_idxs(batch_idxs)
-      batch_ds = DataSet(batch_data, self.data_type)
-      print("batch_idxs:", len(batch_idxs))
-      yield batch_idxs, batch_ds
-
-def read_data(config, data_type="train", word2idx=None, max_seq_length=4):
+def read_reuters(config, data_type="train", word2idx=None, max_seq_length=4):
   print("preparing {} data".format(data_type)) 
   docs, label_seqs, decode_inps, seq_lens = load_hclf_reuters(config, data_type=data_type)
   docs = [tokenize(reuters.raw(doc_id)) for doc_id in docs]
@@ -117,6 +52,7 @@ def read_data(config, data_type="train", word2idx=None, max_seq_length=4):
           "y_mask": y_seq_mask,
           "y_len": seq_lens
          }
+  json.dump(data, open("data/{}/{}_{}.json".format(config.data_from, config.data_from, data_type), "w"), cls=MyEncoder)
   return DataSet(data, data_type)
 
 def tokenize(text):
@@ -299,11 +235,11 @@ def load_hclf_reuters(config, data_type="train", allow_internal=True, in_hierarc
                 if len(set(seq)-set(doc_hcl))==0: repeat=True
             if not repeat: 
                 doc_hcls.append(seq)
-                if data_type=="train" and config.model_name!="RCNN_flat":
+                if data_type=="train" and not config.model_name.endswith("flat"):
                   _process(doc_id, seq, target, d_input)
       if hit : positive_cnt += 1
             
-      if (data_type == "test" or config.model_name=="RCNN_flat") and hit:
+      if (data_type == "test" or config.model_name.endswith("flat")) and hit:
           tl = set()
           for doc_hcl in doc_hcls: tl = tl | set(doc_hcl)
           tl = list(tl)
@@ -312,7 +248,7 @@ def load_hclf_reuters(config, data_type="train", allow_internal=True, in_hierarc
           decode_inp.append([1,0,0,0])   # 1 start 
           seq_len.append(1)
   print(data_type, len(documents), len(docs), positive_cnt)
-  if data_type=="test" or config.model_name=="RCNN_flat":  label_seqs = mlb.fit_transform(label_seqs)
+  if data_type=="test" or config.model_name.endswith("flat"):  label_seqs = mlb.fit_transform(label_seqs)
   return docs, label_seqs, decode_inp, seq_len                 
 
 def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
@@ -390,7 +326,7 @@ def get_fasttext(f, data_type="train", allow_internal=True, in_hierarchy=True):
   for i in range(25): print(i, label2cnt[i])
 
 def prediction_with_threshold(config, t_preds, t_scores, threshold):
-  if config.model_name == "RCNN_flat":
+  if config.model_name.endswith("flat"):
     new_preds = []                                                         
     for i in range(t_preds.shape[0]):
       single = []
@@ -415,7 +351,7 @@ def test():
   import cli
   config = cli.config
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
-  train_data = read_data(config, "train", word2idx)
+  train_data = read_reuters(config, "train", word2idx)
   for batch in train_data.get_batches(60, shuffle=True, cluster=True):
     idxs, ds = batch
     for key, value in ds.data.items():
@@ -423,7 +359,7 @@ def test():
       break
     break
 
-  dev_data = read_data(config, "test", word2idx)
+  dev_data = read_reuters(config, "test", word2idx)
   for batch in dev_data.get_batches(60, shuffle=True, cluster=True):
     idxs, ds = batch
     for key, value in ds.data.items():
@@ -441,7 +377,7 @@ def test_group():
   import cli
   config = cli.config
   word2idx = Counter(json.load(open("data/word2idx.json", "r"))["word2idx"])
-  train_data = read_data(config, data_type="train", word2idx=word2idx)
+  train_data = read_reuters(config, data_type="train", word2idx=word2idx)
   num_batches = config.num_batches
   for batch in tqdm(train_data.get_batches(config.batch_size, num_batches=num_batches, shuffle=True, cluster=config.cluster), total=num_batches):
     pass

@@ -3,7 +3,7 @@ from tensorflow.contrib import rnn
 from tensorflow.python.layers import core as layers_core
 from tensorflow.contrib.seq2seq import BasicDecoder, sequence_loss, GreedyEmbeddingHelper, dynamic_decode, TrainingHelper, \
     ScheduledEmbeddingTrainingHelper, tile_batch, BeamSearchDecoder, BahdanauAttention, AttentionWrapper
-from load_data import DataSet 
+from common import DataSet 
 
 def get_model(config):
   with tf.name_scope("model_{}".format(config.model_name)) as scope, tf.device("/{}:{}".format(config.device_type, config.gpu_idx)):
@@ -22,10 +22,11 @@ class Model(object):
     self.global_step = tf.get_variable('global_step', shape=[], dtype='int32', initializer=tf.constant_initializer(0), trainable=False)
     self.x = tf.placeholder(tf.int32, [None, config.max_docs_length], name="x")      # [batch_size, max_doc_len]
     self.x_mask = tf.placeholder(tf.int32, [None, config.max_docs_length], name="x_mask")      # [batch_size, max_doc_len]
-    if config.model_name == "RCNN_flat":
+    if config.model_name.endswith("flat"):
       self.y = tf.placeholder(tf.int32, [None, config.n_classes], name="y")
     else:
       self.y = tf.placeholder(tf.int32, [None, config.max_seq_length], name="y")
+    print("y", self.y.get_shape())
     self.y_mask = tf.placeholder(tf.int32, [None, max_seq_length], name="y_mask")
     self.y_decoder = tf.placeholder(tf.int32, [None, max_seq_length], name="y-decoder")
     self.x_seq_length = tf.placeholder(tf.int32, [None], name="x_seq_length")
@@ -52,7 +53,7 @@ class Model(object):
     self.yy = tf.nn.embedding_lookup(self.label_embeddings, self.y_decoder) # [None, seq_l, d]    
     self._build_encode(config)
     self._build_train(config)
-    if not config.model_name == "RCNN_flat":
+    if not config.model_name.endswith("flat"):
       self._build_infer(config)
     self._build_loss(config)
     #self.infer_set = set()
@@ -83,7 +84,7 @@ class Model(object):
       self.first_attention = tf.reduce_mean(self.xx_context,  1)    # [None, 2*hd]
       self.check = self.first_attention
       
-    if config.model_name.startswith("RCNN"):
+    if config.model_name.startswith("RCNN") or config.model_name=="fasttext_flat":
       outputs, output_states = tf.nn.bidirectional_dynamic_rnn(self.encode_lstm, self.encode_lstm, tf.transpose(self.xx, [1, 0, 2]), dtype="float", sequence_length=self.x_seq_length, time_major=True)
       outputs_fw = tf.transpose(outputs[0], [1, 0, 2])  
       outputs_bw = tf.transpose(outputs[1], [1, 0, 2])  
@@ -112,23 +113,30 @@ class Model(object):
         self.xx_final = tf.reshape(self.xx_final, [-1, 2*config.hidden_size])
       print("xx_final:", self.xx_final.get_shape())
       # self.xx_context = tf.concat(outputs, 2)   # [None, DL, 2*hd]
-      self.check = self.xx_context
-      self.xx_mask = tf.sequence_mask(self.x_seq_length, config.max_docs_length, dtype=tf.float32)
-      self.xx_mask = tf.contrib.seq2seq.tile_batch(self.xx_mask, config.decode_size)
-      self.xx_mask = tf.reshape(self.xx_mask, [-1, config.max_docs_length, config.decode_size])
-      print("xx_mask:", self.xx_mask)
-      self.first_attention = self.xx_context * self.xx_mask
+      # self.check = self.xx_context
+      #self.xx_mask = tf.sequence_mask(self.x_seq_length, config.max_docs_length, dtype=tf.float32)
+      #self.check2 = self.xx_mask
+      #self.xx_mask = tf.transpose(self.xx_mask, [1,0])
+      #self.xx_mask = tf.contrib.seq2seq.tile_batch(self.xx_mask, config.decode_size)
+      #self.xx_mask = tf.reshape(self.xx_mask, [-1, config.max_docs_length, config.decode_size])
+      #print("xx_mask:", self.xx_mask)
+      #self.first_attention = tf.transpose(self.xx_context,[0,2,1]) * self.xx_mask
+      #self.check = self.first_attention 
       #print("first_attention:", self.first_attention.get_shape())
       self.first_attention = tf.reduce_sum(self.xx_context, 1)    # [None, 2*hd]
-      #print("first_attention:", self.first_attention.get_shape())
-      div = tf.contrib.seq2seq.tile_batch(tf.cast(self.x_seq_length,dtype=tf.float32), config.decode_size)
-      div = tf.reshape(div, [-1, config.decode_size])
-      self.first_attention = tf.realdiv(self.first_attention, div)
+      if config.div:
+        div = tf.contrib.seq2seq.tile_batch(tf.cast(self.x_seq_length, dtype=tf.float32), config.decode_size)
+        div = tf.reshape(div, [-1, config.decode_size])
+        self.first_attention = tf.realdiv(self.first_attention, div)
       print("first_attention:", self.first_attention.get_shape())
 
   def _build_train(self, config):
     # decode
-    if config.model_name == "RCNN_flat":
+    if config.model_name == "fasttext_flat":
+      self.logits = tf.contrib.layers.fully_connected(self.first_attention, config.n_classes, activation_fn=None)
+      print("logits:", self.logits.get_shape())
+      self.logits = tf.reshape(self.logits, [-1, config.n_classes])
+    elif config.model_name == "RCNN_flat":
       self.logits = tf.contrib.layers.fully_connected(self.xx_final, config.n_classes, activation_fn=None)
       print("logits:", self.logits.get_shape())
       self.logits = tf.reshape(self.logits, [-1, config.n_classes])
@@ -164,7 +172,7 @@ class Model(object):
 
   def _build_loss(self, config):
     # cost/evaluate/train
-    if config.model_name == "RCNN_flat":
+    if config.model_name.endswith("flat"):
       self.prob = tf.nn.softmax(self.logits)
       self.losses = tf.nn.softmax_cross_entropy_with_logits(logits=self.logits, labels = self.y) # TODO self.y at multi-labels input 
       self.loss = tf.reduce_mean(self.losses) 
@@ -191,7 +199,7 @@ class Model(object):
     feed_dict[self.y_decoder] = batch_ds["decode_inps"]
     feed_dict[self.y_seq_length] = batch_ds["y_len"]
     #print("y", batch_ds["y_seqs"])
-    if self.config.model_name == "RCNN_flat":
+    if self.config.model_name.endswith("flat"):   # train and test 
       feed_dict[self.y] = batch_ds["y_seqs"]
     if is_train:
       # print("y", batch_ds["y_seqs"])

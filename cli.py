@@ -9,6 +9,9 @@ flags.DEFINE_string("gpu_ids", "0", "Run ID [0]")
 flags.DEFINE_string("device_type", "gpu", "Run ID [0]")
 flags.DEFINE_integer("gpu_idx", 0, "")
 
+# data 
+flags.DEFINE_string("data_from", "20newsgroup", "data_from")
+
 # training
 flags.DEFINE_float("learning_rate", 0.0005, "learning_rate")
 flags.DEFINE_float("keep_prob", 0.8, "keep_prob")
@@ -33,6 +36,7 @@ flags.DEFINE_integer("PAD", 0, "")
 flags.DEFINE_integer("GO", 1, "")
 flags.DEFINE_boolean("project", False, "")
 flags.DEFINE_boolean("concat_w2v", True, "")
+flags.DEFINE_boolean("div", False, "")
 
 # graph control
 flags.DEFINE_string("mode", "train", "")
@@ -70,30 +74,48 @@ def main(_):
     config.log_period = 1
     config.save_period = 1
     config.eval_period = 1
-    config.batch_size = 20
-    config.val_num_batches = 6
+    config.batch_size = 2
+    config.val_num_batches = 3
     config.out_dir = "debug"
   #print(config.test_batch_size)
-  if config.model_name == "RCNN_flat":  
-    config.n_classes = 18
+  if config.model_name.endswith("flat"):  
+    if config.data_from=="reuters": config.n_classes = 18
+    if config.data_from=="20newsgroup": config.n_classes = 20
     config.multilabel_threshold = 0.053
-  config.tree1 = np.array([2,3,4,5,6,7,8])
-  config.tree2 = np.array([9,10,11,12,13,14,15])
-  config.tree3 = np.array([16,17,18,19])
-
-  config.layer1 = np.array([2, 9, 16])
-  config.layer2 = np.array([3, 4, 10, 11, 17, 19])
-  config.layer3 = np.array([5, 6, 7, 8, 12, 13, 14, 15, 18])
+  else:
+    if config.data_from=="reuters": config.n_classes = 21
+    if config.data_from=="20newsgroup": config.n_classes = 29
+    
+  if config.data_from == "reuters":
+    config.max_docs_length = 818
+    config.tree1 = np.array([2,3,4,5,6,7,8])
+    config.tree2 = np.array([9,10,11,12,13,14,15])
+    config.tree3 = np.array([16,17,18,19])
+    config.layer1 = np.array([2, 9, 16])
+    config.layer2 = np.array([3, 4, 10, 11, 17, 19])
+    config.layer3 = np.array([5, 6, 7, 8, 12, 13, 14, 15, 18])
+  
+  if config.data_from == "20newsgroup":
+    config.test_batch_size = 26
+    config.max_docs_length = 1000
+    config.max_seq_length = 3
+    config.tree1 = np.array([22,3,4,5,6,7])
+    config.tree2 = np.array([23,9,10,11,12])
+    config.tree3 = np.array([24,13,14,15,16])
+    config.tree4 = np.array([25,8])
+    config.tree5 = np.array([26,10,18,19])
+    config.tree6 = np.array([27,21,2,17])
+    config.layer1 = np.array([22,23,24,25,26,27])
+    config.layer2 = np.array([3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21])
 
   config.save_dir = os.path.join(config.out_dir, "save")
   config.log_dir = os.path.join(config.out_dir, "log")
-  if not os.path.exists(config.out_dir):
+  if not os.path.exists(config.out_dir):  # or os.path.isfile(config.out_dir):
     os.makedirs(config.out_dir)
   if not os.path.exists(config.save_dir):
     os.mkdir(config.save_dir)
   if not os.path.exists(config.log_dir):
     os.mkdir(config.log_dir)
-  
   os.environ["CUDA_VISIBLE_DEVICES"]=config.gpu_ids
   m(config)
 
